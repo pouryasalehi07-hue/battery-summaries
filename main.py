@@ -3,13 +3,14 @@ import smtplib
 from email.mime.text import MIMEText
 import google.generativeai as genai
 import os
+import time
 
 # Configure the LLM
 genai.configure(api_key=os.environ["GEMINI_API_KEY"])
 model = genai.GenerativeModel("gemini-1.5-flash")
 
 def get_top_paper(search_query):
-    """Searches Semantic Scholar with a browser disguise and returns exact error messages."""
+    """Searches Semantic Scholar with a built-in delay to bypass 429 rate limits."""
     url = "https://api.semanticscholar.org/graph/v1/paper/search"
     params = {
         "query": search_query,
@@ -17,30 +18,41 @@ def get_top_paper(search_query):
         "fields": "title,url,abstract,venue,year",
         "limit": 15 
     }
-    
-    # This header tricks the database into thinking a human on Google Chrome is searching
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
     
-    try:
-        response = requests.get(url, params=params, headers=headers)
-        
-        # If the database blocks us, grab the exact error code
-        if response.status_code != 200:
-            return None, f"API Blocked (Error {response.status_code}): {response.text}"
-        
-        data = response.json()
-        if "data" in data:
-            for paper in data["data"]:
-                if paper.get("abstract"): 
-                    return paper, None
-        return None, "Search succeeded, but no papers with full abstracts were returned."
-    except Exception as e:
-        return None, f"Python Script Error: {str(e)}"
+    # Try up to 3 times if we get blocked
+    for attempt in range(3):
+        try:
+            response = requests.get(url, params=params, headers=headers)
+            
+            # If we hit the 429 limit, wait 5 seconds and try again
+            if response.status_code == 429:
+                time.sleep(5)
+                continue
+                
+            if response.status_code != 200:
+                return None, f"API Error {response.status_code}: {response.text}"
+            
+            data = response.json()
+            if "data" in data:
+                for paper in data["data"]:
+                    if paper.get("abstract"): 
+                        return paper, None
+            return None, "Search succeeded, but no abstracts were found."
+        except Exception as e:
+            return None, f"Python Script Error: {str(e)}"
+            
+    return None, "Failed: API Blocked (Error 429) even after 3 delays."
 
-# Execute the searches and capture any errors
+# 1. Search Inorganic
 inorganic_paper, inorg_error = get_top_paper("NMC811 cathode")
+
+# 2. CRITICAL FIX: Pause the script for 5 seconds before the next search
+time.sleep(5)
+
+# 3. Search Organic
 organic_paper, org_error = get_top_paper("triphenylamine cathode")
 
 summaries = ["<h2>Top Inorganic NMC811 Paper of the Week</h2>"]
@@ -63,7 +75,6 @@ if inorganic_paper:
     summaries.append(f"<b>Journal:</b> {inorganic_paper.get('venue', 'Unknown Journal')} ({inorganic_paper['year']})<br>")
     summaries.append(f"<a href='{inorganic_paper['url']}'>Link to Paper</a><br>{response.text}")
 else:
-    # This will now print the exact error in your email so we can debug it
     summaries.append(f"<p style='color:red;'><i>Failed: {inorg_error}</i></p>")
 
 summaries.append("<hr><h2>Top Organic Cathode Paper of the Week</h2>")
