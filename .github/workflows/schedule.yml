@@ -1,0 +1,29 @@
+name: Daily Research Summarizer
+
+on:
+  schedule:
+    - cron: '0 6 * * *' # Runs daily at 06:00 UTC (08:00 AM in Germany)
+  workflow_dispatch: # Adds a button to trigger it manually for testing
+
+jobs:
+  run-script:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+        
+      - name: Run summarizer
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
+          EMAIL_APP_PASSWORD: ${{ secrets.EMAIL_APP_PASSWORD }}
+          RECEIVER_EMAIL: ${{ secrets.RECEIVER_EMAIL }}
+        run: python main.py
