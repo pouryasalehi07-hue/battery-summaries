@@ -1,59 +1,81 @@
-import feedparser
+import requests
 import smtplib
 from email.mime.text import MIMEText
 import google.generativeai as genai
 import os
 
-# 1. Configure the LLM
+# Configure the LLM
 genai.configure(api_key=os.environ["GEMINI_API_KEY"])
 model = genai.GenerativeModel("gemini-1.5-flash")
 
-# 2. Define the exact extraction templates
-inorganic_prompt = """
-You are a battery materials expert. Analyze this abstract about an inorganic NMC811 lithium coin cell. 
-Extract the following exact data points in a bulleted list. If a metric is missing, explicitly write "Not specified in abstract".
-*   **Specific Capacity:** (e.g., mAh/g)
-*   **Absolute Capacity:** (e.g., mAh)
-*   **Material Percentages:** (e.g., 90% NMC811, 5% PVDF binder, 5% carbon black)
-*   **Core Innovation:** (What is the novel methodology, coating, or electrolyte finding?)
+def get_top_paper(search_query):
+    """Searches Semantic Scholar for the top relevant paper from 2022-2026 with an abstract."""
+    url = "https://api.semanticscholar.org/graph/v1/paper/search"
+    params = {
+        "query": search_query,
+        "year": "2022-2026",
+        "fields": "title,url,abstract,venue,year",
+        "limit": 5  # Fetch top 5, but we will only use the first one that has an abstract
+    }
+    
+    response = requests.get(url, params=params).json()
+    if "data" in response:
+        for paper in response["data"]:
+            if paper.get("abstract"):  # Make sure the publisher provided an abstract to read
+                return paper
+    return None
 
-Title: {title}
-Abstract: {abstract}
-"""
+# Highly specific queries to pull the absolute best match
+inorganic_paper = get_top_paper("NMC811 coin cell cathode capacity gel polymer electrolyte")
+organic_paper = get_top_paper("organic cathode lithium triphenylamine capacity stability")
 
-organic_prompt = """
-You are a battery materials expert. Analyze this abstract about an organic cathode lithium coin cell. 
-Extract the following exact data points in a bulleted list. If a metric is missing, explicitly write "Not specified in abstract".
-*   **Specific Capacity:** (e.g., mAh/g)
-*   **Absolute Capacity:** (e.g., mAh)
-*   **Stability:** (e.g., capacity retention % over X cycles)
-*   **Core Innovation:** (What is the novel molecule, e.g., triphenylamine derivatives, or structural design?)
+summaries = ["<h2>Top Inorganic NMC811 Paper of the Week</h2>"]
 
-Title: {title}
-Abstract: {abstract}
-"""
+if inorganic_paper:
+    inorganic_prompt = f"""
+    You are a battery materials expert. Analyze this abstract.
+    Extract exactly:
+    *   **Target Material:**
+    *   **Specific Capacity:**
+    *   **Absolute Capacity:**
+    *   **Material Percentages:**
+    *   **Core Innovation:**
 
-# 3. Fetch and process both feeds
-summaries = ["<h2>Inorganic NMC811 Research</h2>"]
+    Title: {inorganic_paper['title']}
+    Abstract: {inorganic_paper['abstract']}
+    """
+    response = model.generate_content(inorganic_prompt)
+    summaries.append(f"<h3>{inorganic_paper['title']}</h3>")
+    summaries.append(f"<b>Journal:</b> {inorganic_paper.get('venue', 'Unknown Journal')} ({inorganic_paper['year']})<br>")
+    summaries.append(f"<a href='{inorganic_paper['url']}'>Link to Paper</a><br>{response.text}")
+else:
+    summaries.append("<p>No highly relevant inorganic papers with abstracts found for this timeframe.</p>")
 
-# Fetches the latest papers mentioning NMC811 and cathodes
-inorganic_feed = feedparser.parse("http://export.arxiv.org/api/query?search_query=all:NMC811+AND+all:cathode&start=0&max_results=3&sortBy=submittedDate&sortOrder=descending")
-for entry in inorganic_feed.entries:
-    response = model.generate_content(inorganic_prompt.format(title=entry.title, abstract=entry.summary))
-    summaries.append(f"<h3>{entry.title}</h3><a href='{entry.link}'>Paper Link</a><br>{response.text}")
+summaries.append("<hr><h2>Top Organic Cathode Paper of the Week</h2>")
 
-summaries.append("<hr><h2>Organic Cathode Research</h2>")
+if organic_paper:
+    organic_prompt = f"""
+    You are a battery materials expert. Analyze this abstract.
+    Extract exactly:
+    *   **Specific Capacity:**
+    *   **Absolute Capacity:**
+    *   **Stability:**
+    *   **Core Innovation:**
 
-# Fetches the latest papers mentioning organic lithium cathodes
-organic_feed = feedparser.parse("http://export.arxiv.org/api/query?search_query=all:organic+AND+all:cathode+AND+all:lithium&start=0&max_results=3&sortBy=submittedDate&sortOrder=descending")
-for entry in organic_feed.entries:
-    response = model.generate_content(organic_prompt.format(title=entry.title, abstract=entry.summary))
-    summaries.append(f"<h3>{entry.title}</h3><a href='{entry.link}'>Paper Link</a><br>{response.text}")
+    Title: {organic_paper['title']}
+    Abstract: {organic_paper['abstract']}
+    """
+    response = model.generate_content(organic_prompt)
+    summaries.append(f"<h3>{organic_paper['title']}</h3>")
+    summaries.append(f"<b>Journal:</b> {organic_paper.get('venue', 'Unknown Journal')} ({organic_paper['year']})<br>")
+    summaries.append(f"<a href='{organic_paper['url']}'>Link to Paper</a><br>{response.text}")
+else:
+    summaries.append("<p>No highly relevant organic papers with abstracts found for this timeframe.</p>")
 
-# 4. Format and send the email
+# Format and send the email
 html_content = "<br><br>".join(summaries)
 msg = MIMEText(html_content, "html")
-msg['Subject'] = "Daily Battery Research Summaries (Dual Track)"
+msg['Subject'] = "Weekly Battery Research Deep Dive"
 msg['From'] = os.environ["SENDER_EMAIL"]
 msg['To'] = os.environ["RECEIVER_EMAIL"]
 
