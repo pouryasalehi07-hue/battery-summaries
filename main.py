@@ -15,19 +15,19 @@ def get_top_paper(search_query):
         "query": search_query,
         "year": "2022-2026",
         "fields": "title,url,abstract,venue,year",
-        "limit": 5  # Fetch top 5, but we will only use the first one that has an abstract
+        "limit": 15  # Increased limit to guarantee we find one with a valid abstract
     }
     
     response = requests.get(url, params=params).json()
     if "data" in response:
         for paper in response["data"]:
-            if paper.get("abstract"):  # Make sure the publisher provided an abstract to read
+            if paper.get("abstract"): 
                 return paper
     return None
 
-# Highly specific queries to pull the absolute best match
-inorganic_paper = get_top_paper("NMC811 coin cell cathode capacity gel polymer electrolyte")
-organic_paper = get_top_paper("organic cathode lithium triphenylamine capacity stability")
+# Broadened queries so the database actually returns results
+inorganic_paper = get_top_paper("NMC811 cathode")
+organic_paper = get_top_paper("triphenylamine cathode lithium")
 
 summaries = ["<h2>Top Inorganic NMC811 Paper of the Week</h2>"]
 
@@ -39,7 +39,7 @@ if inorganic_paper:
     *   **Specific Capacity:**
     *   **Absolute Capacity:**
     *   **Material Percentages:**
-    *   **Core Innovation:**
+    *   **Core Innovation:** (Look for gel polymer electrolytes or coatings)
 
     Title: {inorganic_paper['title']}
     Abstract: {inorganic_paper['abstract']}
@@ -60,7 +60,7 @@ if organic_paper:
     *   **Specific Capacity:**
     *   **Absolute Capacity:**
     *   **Stability:**
-    *   **Core Innovation:**
+    *   **Core Innovation:** (Focus on the molecular design or stability improvements)
 
     Title: {organic_paper['title']}
     Abstract: {organic_paper['abstract']}
